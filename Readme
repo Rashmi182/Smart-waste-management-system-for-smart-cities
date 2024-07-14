@@ -1,0 +1,16 @@
+Overview:
+
+The Smart Waste Management System aims to revolutionize waste collection and disposal in smart cities using IoT technology. This project integrates sensors, microcontrollers, and a mobile application to optimize waste management processes and promote environmental sustainability.
+
+Key Features:
+Real-time monitoring of waste levels using ultrasonic sensors.
+Automatic lid operation with servo motors upon detecting nearby persons.
+Detection of water levels using moisture sensors coupled with DC motors.
+Gas and flame sensors for detecting harmful substances in bins.
+GPS tracking for real-time location monitoring.
+Live streaming capability through integrated camera modules.
+
+Technologies Used:
+Hardware: ESP32 microcontroller, Arduino software, IoT sensors.
+Software: Arduino IDE was utilized for coding and development.
+Mobile App Development: MIT App Inventor used for creating the mobile application interface.
