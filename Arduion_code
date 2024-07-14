@@ -1,0 +1,365 @@
+#include <IOXhop_FirebaseESP32.h>
+#include <ESP32Servo.h>
+#include <Wire.h>
+#include <TinyGPS++.h>
+TinyGPSPlus gps;
+#include "DFRobotDFPlayerMini.h"
+DFRobotDFPlayerMini myDFPlayer;
+
+#define TRIG_PIN 14
+#define ECHO_PIN 12
+#define Trig_pin 5
+#define Echo_pin 4
+#define BUZZER_PIN 13
+
+#define MOISTURE_SENSOR_PIN 33
+const int smoke = 32;
+const int flamepin = 25;
+
+const int motor1Pin1 = 19;
+const int motor1Pin2 = 18;
+boolean mflag = 0;
+
+#define FIREBASE_HOST "smart-dustbin-29c75-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH "ePNuRpAh6aWJJ0H2O0MCc3oKAnrcEzCorRvLiwyt"
+#define WIFI_SSID "Oneplusnord"
+#define WIFI_PASSWORD "n9sr75nk"
+boolean flameValue;
+float sensorValue;
+int waterlevel = 0;
+Servo myServo;
+
+
+volatile float minutes, seconds;
+volatile int degree, secs, mins;
+double lat_val, lng_val;
+
+double latt;
+double longg;
+long duration;
+int distance;
+long duration1;
+int distance1;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("WELCOME");
+  delay(200);
+  Serial2.begin(9600);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
+  Serial.print("connected: ");
+  Serial.println(WiFi.localIP());
+  delay(200);
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  delay(200);
+  Firebase.setFloat("Lat", 12.954859);
+  delay(200);
+  Firebase.setFloat("Long", 77.5716493);
+  delay(200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(Trig_pin, OUTPUT);
+  pinMode(Echo_pin, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(flamepin, INPUT);
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+
+  myServo.attach(15);
+  Serial1.begin(9600, SERIAL_8N1, 26, 27);
+  //Serial2.begin(9600);
+  delay(200);
+  Serial.println();
+  Serial.println(F("DFRobot DFPlayer Mini Demo"));
+  Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
+  myDFPlayer.begin(Serial1);
+  Serial.println(F("DFPlayer Mini online."));
+  delay(4000);
+  myDFPlayer.volume(30);  //Set volume value. From 0 to 30
+  delay(100);
+  myDFPlayer.EQ(1);
+  delay(100);
+}
+
+
+
+void buzzeron() {
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(400);
+  digitalWrite(BUZZER_PIN, LOW);
+  delay(100);
+}
+
+void readultrasonic() {
+
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  // Set the trigger pin high for 10 microseconds
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Read the echo pin, calculate distance
+  duration = pulseIn(ECHO_PIN, HIGH);
+  distance = duration * 0.034 / 2;  // Speed of sound is 0.034 cm/us
+
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // If an object is within 100 cm, activate the buzzer
+  if (distance < 30 && distance > 0) {
+    buzzeron();
+    servoopen();
+    delay(2000);
+    myDFPlayer.play(1);
+    delay(3000);
+    myDFPlayer.play(2);
+    delay(3000);
+    servoclose();
+    delay(1000);
+  }
+}
+
+void readdustlevel() {
+  // Clear the trigger pin
+  digitalWrite(Trig_pin, LOW);
+  delayMicroseconds(2);
+
+  // Set the trigger pin high for 10 microseconds
+  digitalWrite(Trig_pin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(Trig_pin, LOW);
+
+  // Read the echo pin, calculate distance
+  duration1 = pulseIn(Echo_pin, HIGH);
+  distance1 = duration1 * 0.034 / 2;  // Speed of sound is 0.034 cm/us
+
+  Serial.print("Distance1: ");
+  Serial.print(distance1);
+  Serial.println(" cm");
+
+  // If an object is within 100 cm, activate the buzzer
+  if (distance1 <= 10) {
+    Serial.println("Dustbin is Full");
+    buzzeron();
+    myDFPlayer.play(3);
+    delay(3000);
+    myDFPlayer.play(4);
+    delay(3000);
+    Firebase.setString("dustbin", "Full");
+    delay(100);
+    Firebase.setFloat("dustbinflag", 1);
+    delay(100);
+    Firebase.setFloat("dustbinflag", 0);
+    delay(100);
+  }
+  else
+  {
+    Firebase.setString("dustbin", "Empty");
+    delay(100);
+  }
+}
+
+
+void servoopen() {
+
+  // Sweep the servo from 0 to 180 degrees
+  // for (int pos = 0; pos <= 120; pos++) {
+  //   myServo.write(pos);  // Set the servo position
+  //   delay(15);           // Wait for the servo to move
+  // }
+  myServo.write(0);
+}
+
+// Sweep the servo from 180 to 0 degrees
+void servoclose() {
+  // for (int pos = 120; pos >= 0; pos--) {
+  //   myServo.write(pos);  // Set the servo position
+  //   delay(15);           // Wait for the servo to move
+  // }
+  myServo.write(90);
+}
+
+void readmq4() {
+  sensorValue = analogRead(smoke);
+  Serial.print("Smoke Value:");
+  Serial.println(sensorValue);
+  delay(200);
+  if (sensorValue > 1200) {
+    Serial.println("SMOKE detected!");
+    buzzeron();
+    Firebase.setString("smoke", "SMOKE_detected");
+    delay(200);
+    Firebase.setFloat("smokeflag", 1);
+    delay(200);
+    Firebase.setFloat("smokeflag", 0);
+    delay(200);
+  }
+  else
+  {
+    Serial.println("SMOKE  not detected!");
+    Firebase.setString("smoke", "NO_SMOKE_detected");
+    delay(200);
+  }
+}
+
+void readmoisture() {
+  int moistureLevel = analogRead(MOISTURE_SENSOR_PIN);  // Read the moisture level
+  Serial.print("Water Level: ");
+  waterlevel = (4095 - moistureLevel) * 100 / 4095;
+  Serial.println(waterlevel);
+  delay(200);
+
+  if (waterlevel < 30) {
+    Serial.println("Dry Waste");
+    Firebase.setString("Waste", "DRY");
+    delay(200);
+    // Rotate motor clockwise for half rotation
+    motorclockwise();
+    // Delay to allow the motor to stop
+    delay(1000);
+    // Rotate the motor anticlockwise to return to the original position
+    //motoranticlockwise();
+    // Delay to allow the motor to stop
+    delay(1000);
+  }
+  else
+  {
+    Serial.println("WET Waste");
+    buzzeron();
+    // Rotate motor anticlockwise for half rotation
+    motoranticlockwise();
+    // Delay to allow the motor to stop
+    delay(1000);
+    // Rotate the motor clockwise to return to the original position
+    // motorclockwise();
+    // Delay to allow the motor to stop
+    delay(1000);
+    Firebase.setString("Waste", "WET");
+    delay(200);
+  }
+}
+
+
+void gpslocation() {
+  Serial.println("*****");
+  smartDelay(1000); /* Generate precise delay of 1ms */
+  unsigned long start;
+
+  bool loc_valid, alt_valid, time_valid;
+  lat_val = gps.location.lat();       /* Get latitude data */
+  loc_valid = gps.location.isValid(); /* Check if valid location data is available */
+  lng_val = gps.location.lng();       /* Get longtitude data */
+
+  if (!loc_valid) {
+    Serial.print("Latitude : ");
+    Serial.println(latt);
+    Serial.print("Longitude : ");
+    Serial.println(longg);
+  } else {
+    DegMinSec(lat_val);
+    Serial.print("Latitude in Decimal Degrees : ");
+    Serial.println(lat_val, 6);
+    Serial.print("Longitude in Decimal Degrees : ");
+    Serial.println(lng_val, 6);
+    Firebase.setFloat("Lat", lat_val);
+    delay(200);
+    Firebase.setFloat("Long", lng_val);
+    delay(200);
+  }
+}
+
+static void smartDelay(unsigned long ms) {
+  unsigned long start = millis();
+  do {
+    while (Serial2.available()) /* Encode data read from GPS while data is available on serial port */
+      gps.encode(Serial2.read());
+    /* Encode basically is used to parse the string received by the GPS and to store it in a buffer so that information can be extracted from it */
+  } while (millis() - start < ms);
+}
+
+void DegMinSec(double tot_val) /* Convert data in decimal degrees into degrees minutes seconds form */
+{
+  degree = (int)tot_val;
+  minutes = tot_val - degree;
+  seconds = 60 * minutes;
+  minutes = (int)seconds;
+  mins = (int)minutes;
+  seconds = seconds - minutes;
+  seconds = 60 * seconds;
+  secs = (int)seconds;
+}
+
+void readflame() {
+  flameValue = digitalRead(flamepin);
+  Serial.print("Flame Value:");
+  Serial.println(flameValue);
+  delay(200);
+  if (flameValue == 0) {
+    Serial.println("Flame detected");
+    delay(200);
+    buzzeron();
+    Firebase.setString("Fire", "Flame_detected");
+    delay(200);
+    Firebase.setFloat("Fireflag", 1);
+    delay(200);
+    Firebase.setFloat("Fireflag", 0);
+    delay(200);
+
+  } else {
+    Serial.println("Flame not detected");
+    delay(200);
+    Firebase.setString("Fire", "NO_Flame_detected");
+    delay(100);
+  }
+}
+
+void motorclockwise() {
+  // Rotate motor in one direction (clockwise for example)
+  digitalWrite(motor1Pin1, HIGH);
+  digitalWrite(motor1Pin2, LOW);
+  delay(5000);  // Adjust delay as needed for half rotation
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  delay(200);
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, HIGH);
+  delay(5000);
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  delay(200);
+}
+
+void motoranticlockwise() {
+  // Rotate motor in one direction (clockwise for example)
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, HIGH);
+  delay(5000);  // Adjust delay as needed for half rotation
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  delay(200);
+  digitalWrite(motor1Pin1, HIGH);
+  digitalWrite(motor1Pin2, LOW);
+  delay(5000);
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  delay(200);
+}
+
+void loop() {
+  readultrasonic();
+  readmq4();
+  readmoisture();
+  readflame();
+  readdustlevel();
+  gpslocation();
+}
